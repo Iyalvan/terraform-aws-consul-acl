@@ -171,6 +171,11 @@ variable "root_volume_ebs_optimized" {
   type        = bool
   default     = false
 }
+variable "root_device_name" {
+  description = "The device name of the root device volume"
+  type        = string
+  default     = "/dev/sda1"
+}
 
 variable "root_volume_type" {
   description = "The type of volume. Must be one of: standard, gp2, or io1."
@@ -194,6 +199,12 @@ variable "root_volume_encrypted" {
   description = "Encrypt the root volume at rest"
   type        = bool
   default     = false
+}
+
+variable "launch_template_version" {
+  description = "The version of the launch template to use. If not provided, the latest version will be used."
+  type        = string
+  default     = "$Latest"  
 }
 
 variable "wait_for_capacity_timeout" {
@@ -321,7 +332,7 @@ variable "acl_store_type" {
   type        = string
   default     = ""
   validation {
-    condition     = contains(["ssm",""],var.acl_store_type)
+    condition     = contains(["ssm", ""], var.acl_store_type)
     error_message = "You must specify a supported store type for ACL tokens. Currently the only allowed value is 'ssm'."
-  } 
+  }
 }

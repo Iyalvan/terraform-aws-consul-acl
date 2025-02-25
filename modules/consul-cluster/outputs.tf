@@ -8,9 +8,9 @@ output "cluster_size" {
   description = "This is the desired size of the consul cluster in the autoscaling group"
 }
 
-output "launch_config_name" {
-  value       = aws_launch_configuration.launch_configuration.name
-  description = "This is the name of the launch_configuration used to bootstrap the cluster instances"
+output "launch_template_name" {
+  value       = aws_launch_template.launch_template.name
+  description = "This is the name of the launch_template used to bootstrap the cluster instances"
 }
 
 output "iam_role_arn" {
