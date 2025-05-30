@@ -288,6 +288,11 @@ function generate_consul_config {
   local ui_config_enabled="false"
   
   metadata_token=$(get_metadata_token)
+  if [[ -z "$metadata_token" ]]; then
+    log_error "could not retrieve IMDSv2 token. exiting. check if your launch template metadata options have http_tokens set to required and http_endpoint set to enabled."
+    exit 1
+  fi
+
   instance_id=$(get_instance_id "$metadata_token")
   instance_ip_address=$(get_instance_ip_address "$metadata_token")
   instance_region=$(get_instance_region "$metadata_token")
