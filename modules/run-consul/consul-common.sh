@@ -47,26 +47,30 @@ function assert_not_empty {
   fi
 }
 
+function get_metadata_token {
+  curl --silent --show-error --location --request PUT "$EC2_INSTANCE_METADATA_URL/api/token" --header "X-aws-ec2-metadata-token-ttl-seconds: 21600"
+}
+
 function lookup_path_in_instance_metadata {
   local -r path="$1"
-  curl --silent --show-error --location "$EC2_INSTANCE_METADATA_URL/$path/"
+  curl --silent --show-error --location --header "X-aws-ec2-metadata-token: $token" "$EC2_INSTANCE_METADATA_URL/$path/"
 }
 
 function lookup_path_in_instance_dynamic_data {
   local -r path="$1"
-  curl --silent --show-error --location "$EC2_INSTANCE_DYNAMIC_DATA_URL/$path/"
+  curl --silent --show-error --location --header "X-aws-ec2-metadata-token: $token" "$EC2_INSTANCE_DYNAMIC_DATA_URL/$path/"
 }
 
 function get_instance_ip_address {
-  lookup_path_in_instance_metadata "local-ipv4"
+  lookup_path_in_instance_metadata "local-ipv4" "$1"
 }
 
 function get_instance_id {
-  lookup_path_in_instance_metadata "instance-id"
+  lookup_path_in_instance_metadata "instance-id" "$1"
 }
 
 function get_instance_region {
-  lookup_path_in_instance_dynamic_data "instance-identity/document" | jq -r ".region"
+  lookup_path_in_instance_dynamic_data "instance-identity/document" "$1" | jq -r ".region"
 }
 
 function get_instance_tags {
@@ -282,10 +286,11 @@ function generate_consul_config {
   local instance_region=""
   # https://www.consul.io/docs/agent/options#ui-1
   local ui_config_enabled="false"
-
-  instance_id=$(get_instance_id)
-  instance_ip_address=$(get_instance_ip_address)
-  instance_region=$(get_instance_region)
+  
+  metadata_token=$(get_metadata_token)
+  instance_id=$(get_instance_id "$metadata_token")
+  instance_ip_address=$(get_instance_ip_address "$metadata_token")
+  instance_region=$(get_instance_region "$metadata_token")
 
   local retry_join_json=""
   if [[ -z "$cluster_tag_key" || -z "$cluster_tag_value" ]]; then
