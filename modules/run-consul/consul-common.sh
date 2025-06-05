@@ -48,7 +48,7 @@ function assert_not_empty {
 }
 
 function get_metadata_token {
-  curl --silent --show-error --location --request PUT "$EC2_INSTANCE_METADATA_URL/api/token" --header "X-aws-ec2-metadata-token-ttl-seconds: 21600"
+  curl --silent --show-error --location --request PUT "$EC2_INSTANCE_METADATA_URL/../api/token" --header "X-aws-ec2-metadata-token-ttl-seconds: 21600"
 }
 
 function lookup_path_in_instance_metadata {
