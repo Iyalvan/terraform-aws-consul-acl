@@ -53,11 +53,13 @@ function get_metadata_token {
 
 function lookup_path_in_instance_metadata {
   local -r path="$1"
+  local -r token="$2"
   curl --silent --show-error --location --header "X-aws-ec2-metadata-token: $token" "$EC2_INSTANCE_METADATA_URL/$path/"
 }
 
 function lookup_path_in_instance_dynamic_data {
   local -r path="$1"
+  local -r token="$2"
   curl --silent --show-error --location --header "X-aws-ec2-metadata-token: $token" "$EC2_INSTANCE_DYNAMIC_DATA_URL/$path/"
 }
 
