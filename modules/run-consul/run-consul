@@ -319,7 +319,7 @@ function run {
   fi
 
   if [[ -z "$datacenter" ]]; then
-    datacenter=$(get_instance_region)
+    datacenter=$(aws_get_instance_region)
   fi
 
   if [[ "$skip_consul_config" == "true" ]]; then
