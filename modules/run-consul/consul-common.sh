@@ -278,8 +278,7 @@ function generate_consul_config {
   local -r upgrade_version_tag=${20}
   local -r config_path="$config_dir/$CONSUL_CONFIG_FILE"
   local -r enable_acl="${21}"
-  local -r node_prefix="${22}"
-
+  local -r node_name="${22}"
   shift 22
   local -r recursors=("$@")
 
@@ -288,6 +287,11 @@ function generate_consul_config {
   local instance_region=""
   # https://www.consul.io/docs/agent/options#ui-1
   local ui_config_enabled="false"
+
+local node_name
+
+
+log_info "Using node_name=\"$node_name\" (strategy: $naming_strategy)"
   
   metadata_token=$(get_metadata_token)
   if [[ -z "$metadata_token" ]]; then
@@ -378,12 +382,6 @@ EOF
 )
   fi
 
-  if [ -z "$node_prefix" ] || [ "$node_prefix" == "" ]; then
-      log_info "node_prefix is not set. Hence using default $instance_id from metadata"
-  else
-      log_info "adding $node_prefix-$instance_id to the node_name config"
-      instance_id="$node_prefix-$instance_id"
-    fi
 
 # adding default telemetry configuration for consul based on https://developer.hashicorp.com/consul/docs/release-notes/consul/v1_12_x#what-s-changed
 
@@ -408,7 +406,7 @@ EOF
   $bootstrap_expect
   "client_addr": "0.0.0.0",
   "datacenter": "$datacenter",
-  "node_name": "$instance_id",
+  "node_name": "$node_name",
   $recursors_config
   $retry_join_json
   $acl_configuration
@@ -522,4 +520,28 @@ function set_agent_token {
   fi
 
   consul acl set-agent-token $token_arg agent "$agent_token"
+}
+
+
+function compute_node_name {
+  local naming_strategy="$1"
+  local node_prefix="$2"
+  local base
+  case "$naming_strategy" in
+    instance-id)
+      base="$(aws_get_instance_id)"
+      ;;
+    instance-ip)
+      base="$(aws_wrapper_get_hostname | cut -d. -f1)"
+      ;;
+    *)
+      log_error "Invalid naming_strategy: '$naming_strategy'. Must be 'instance-id' or 'instance-ip'."
+      exit 1
+      ;;
+  esac
+  if [[ -n "$node_prefix" ]]; then
+    echo "${node_prefix}-${base}"
+  else
+    echo "$base"
+  fi
 }

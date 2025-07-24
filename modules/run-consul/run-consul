@@ -87,6 +87,7 @@ function run {
   local user=""
   local cluster_tag_key=""
   local cluster_tag_value=""
+  local naming_strategy="instance-id"  # default
   local node_prefix=""
   local datacenter=""
   local upgrade_version_tag=""
@@ -108,6 +109,7 @@ function run {
   local disable_upgrade_migration="$DEFAULT_AUTOPILOT_DISABLE_UPGRADE_MIGRATION"
   local enable_acl
   local acl_storage_type
+  
 
   while [[ $# -gt 0 ]]; do
     local key="$1"
@@ -157,6 +159,11 @@ function run {
       --cluster-tag-value)
         assert_not_empty "$key" "$2"
         cluster_tag_value="$2"
+        shift
+        ;;
+      --naming-strategy)
+        assert_not_empty "$key" "$2"
+        naming_strategy="$2"
         shift
         ;;
       --node-prefix)
@@ -334,6 +341,9 @@ function run {
       assert_not_empty "--key_file_path" "$key_file_path"
     fi
 
+    node_name="$(compute_node_name "$naming_strategy" "$node_prefix")"
+    log_info "computed node_name=\"$node_name\" (strategy=$naming_strategy, prefix=$node_prefix)"
+
     generate_consul_config "$server" \
       "$config_dir" \
       "$user" \
@@ -355,7 +365,7 @@ function run {
       "$disable_upgrade_migration" \
       "$upgrade_version_tag" \
       "$enable_acl" \
-      "$node_prefix" \
+      "$node_name" \
       "${recursors[@]}"
   fi
 
@@ -365,7 +375,7 @@ function run {
   if [[ "$enable_acl" == "true" ]]; then
     local -r asg_name=$(aws_wrapper_get_asg_name $MAX_RETRIES $SLEEP_BETWEEN_RETRIES_SEC)
      local -r aws_region=$(aws_get_instance_region)
-    local -r instance_id=$(aws_get_instance_id)
+   # local -r instance_id=$(aws_get_instance_id)
 
     local bootstrap_token
 
@@ -430,15 +440,15 @@ function run {
     if ([ $consul_major_version -ge 1 ] && ( [ $consul_minor_version -ge 9 ] || ([ $consul_minor_version -eq 8 ] && [ $consul_build_version -ge 1 ]))) || [ $consul_major_version -gt 1 ]; then
       # Generate the agent token using the newer method
       log_info "Creating agent token using -node-idenity"
-      agent_token=$(generate_agent_token "$node_prefix-$instance_id" $datacenter $bootstrap_token)
+      agent_token=$(generate_agent_token "$node_name" $datacenter $bootstrap_token)
     else
       # Generate agent policy dynamically and write it
       log_info "Creating agent policy and token"
       local -r agent_policy=$(generate_node_acl_policy $local_hostname)
-      write_acl_policy "$node_prefix-$instance_id" "$agent_policy" "$bootstrap_token"
+      write_acl_policy "$node_name" "$agent_policy" "$bootstrap_token"
 
       # Generate agent token and persist it
-      agent_token=$(generate_token "$node_prefix-$instance_id" "$node_prefix-$instance_id agent policy" $bootstrap_token)
+      agent_token=$(generate_token "$node_name" "$node_name agent policy" $bootstrap_token)
     fi
 
     if [ -z "$agent_token" ] || [ "$agent_token" == "" ]; then
