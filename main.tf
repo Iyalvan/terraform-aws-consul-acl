@@ -10,11 +10,16 @@
 # REQUIRE A SPECIFIC TERRAFORM VERSION OR HIGHER
 # ----------------------------------------------------------------------------------------------------------------------
 terraform {
-  # This module is now only being tested with Terraform 1.0.x. However, to make upgrading easier, we are setting
-  # 0.14.0 as the minimum version, as that version added support for validation and the alltrue function
-  # Removing the validation completely will yield a version compatible with 0.12.26 as that added support for
-  # required_providers with source URLs
-  required_version = ">= 0.14.0"
+  # pin to terraform 1.x and require aws provider >= 5.0 (aws_subnets, which
+  # replaced the removed aws_subnet_ids data source, needs provider v5+)
+  required_version = ">= 1.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 5.0"
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -79,7 +84,7 @@ module "consul_servers" {
   })
 
   vpc_id     = data.aws_vpc.default.id
-  subnet_ids = data.aws_subnet_ids.default.ids
+  subnet_ids = data.aws_subnets.default.ids
 
   # If set to true, this allows access to the consul HTTPS API
   enable_https_port = var.enable_https_port
@@ -128,7 +133,7 @@ module "consul_clients" {
   })
 
   vpc_id     = data.aws_vpc.default.id
-  subnet_ids = data.aws_subnet_ids.default.ids
+  subnet_ids = data.aws_subnets.default.ids
 
   # To make testing easier, we allow Consul and SSH requests from any IP address here but in a production
   # deployment, we strongly recommend you limit this to the IP address ranges of known, trusted servers inside your VPC.
@@ -149,8 +154,11 @@ data "aws_vpc" "default" {
   id      = var.vpc_id
 }
 
-data "aws_subnet_ids" "default" {
-  vpc_id = data.aws_vpc.default.id
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
 }
 
 data "aws_region" "current" {

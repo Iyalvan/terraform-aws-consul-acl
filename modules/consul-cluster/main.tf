@@ -3,10 +3,15 @@
 # ----------------------------------------------------------------------------------------------------------------------
 
 terraform {
-  # This module is now only being tested with Terraform 1.0.x. However, to make upgrading easier, we are setting
-  # 0.12.26 as the minimum version, as that version added support for required_providers with source URLs, making it
-  # forwards compatible with 1.0.x code.
-  required_version = ">= 0.12.26"
+  # pin to terraform 1.x and require aws provider >= 5.0
+  required_version = ">= 1.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 5.0"
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -39,21 +44,30 @@ resource "aws_autoscaling_group" "autoscaling_group" {
 
   protect_from_scale_in = var.protect_from_scale_in
 
-  tags = flatten(
-    [
-      {
-        key                 = "Name"
-        value               = var.cluster_name
-        propagate_at_launch = true
-      },
-      {
-        key                 = var.cluster_tag_key
-        value               = var.cluster_tag_value
-        propagate_at_launch = true
-      },
+  # aws provider v5 removed the list-form "tags" argument on aws_autoscaling_group;
+  # emit a tag block per entry instead (Name + cluster tag + any extra var.tags)
+  dynamic "tag" {
+    for_each = concat(
+      [
+        {
+          key                 = "Name"
+          value               = var.cluster_name
+          propagate_at_launch = true
+        },
+        {
+          key                 = var.cluster_tag_key
+          value               = var.cluster_tag_value
+          propagate_at_launch = true
+        },
+      ],
       var.tags,
-    ]
-  )
+    )
+    content {
+      key                 = tag.value.key
+      value               = tag.value.value
+      propagate_at_launch = tag.value.propagate_at_launch
+    }
+  }
 
   dynamic "initial_lifecycle_hook" {
     for_each = var.lifecycle_hooks
