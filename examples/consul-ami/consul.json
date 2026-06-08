@@ -2,32 +2,13 @@
   "min_packer_version": "1.5.4",
   "variables": {
     "aws_region": "us-east-1",
-    "consul_version": "1.9.2",
+    "consul_version": "1.21.0",
     "download_url": "{{env `CONSUL_DOWNLOAD_URL`}}"
   },
   "builders": [{
-    "name": "ubuntu16-ami",
+    "name": "ubuntu22-ami",
     "ami_name": "consul-ubuntu-{{isotime | clean_resource_name}}-{{uuid}}",
-    "ami_description": "An Ubuntu 16.04 AMI that has Consul installed.",
-    "instance_type": "t2.micro",
-    "region": "{{user `aws_region`}}",
-    "type": "amazon-ebs",
-    "source_ami_filter": {
-      "filters": {
-        "virtualization-type": "hvm",
-        "architecture": "x86_64",
-        "name": "*ubuntu-xenial-16.04-amd64-server-*",
-        "block-device-mapping.volume-type": "gp2",
-        "root-device-type": "ebs"
-      },
-      "owners": ["099720109477"],
-      "most_recent": true
-    },
-    "ssh_username": "ubuntu"
-  },{
-    "name": "ubuntu18-ami",
-    "ami_name": "consul-ubuntu-{{isotime | clean_resource_name}}-{{uuid}}",
-    "ami_description": "An Ubuntu 18.04 AMI that has Consul installed.",
+    "ami_description": "An Ubuntu 22.04 AMI that has Consul installed.",
     "instance_type": "t2.micro",
     "region": "{{user `aws_region`}}",
     "associate_public_ip_address": true,
@@ -36,8 +17,7 @@
       "filters": {
         "virtualization-type": "hvm",
         "architecture": "x86_64",
-        "name": "ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server-*",
-        "block-device-mapping.volume-type": "gp2",
+        "name": "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*",
         "root-device-type": "ebs"
       },
       "owners": ["099720109477"],
@@ -45,9 +25,9 @@
     },
     "ssh_username": "ubuntu"
   },{
-    "name": "ubuntu20-ami",
+    "name": "ubuntu24-ami",
     "ami_name": "consul-ubuntu-{{isotime | clean_resource_name}}-{{uuid}}",
-    "ami_description": "An Ubuntu 20.04 AMI that has Consul installed.",
+    "ami_description": "An Ubuntu 24.04 AMI that has Consul installed.",
     "instance_type": "t2.micro",
     "region": "{{user `aws_region`}}",
     "associate_public_ip_address": true,
@@ -56,19 +36,17 @@
       "filters": {
         "virtualization-type": "hvm",
         "architecture": "x86_64",
-        "name": "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*",
-        "block-device-mapping.volume-type": "gp2",
+        "name": "ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*",
         "root-device-type": "ebs"
       },
       "owners": ["099720109477"],
       "most_recent": true
     },
     "ssh_username": "ubuntu"
-
   },{
-    "name": "amazon-linux-2-ami",
-    "ami_name": "consul-amazon-linux-2-{{isotime | clean_resource_name}}-{{uuid}}",
-    "ami_description": "An Amazon Linux 2 AMI that has Consul installed.",
+    "name": "al2023-ami",
+    "ami_name": "consul-amazon-linux-2023-{{isotime | clean_resource_name}}-{{uuid}}",
+    "ami_description": "An Amazon Linux 2023 AMI that has Consul installed.",
     "instance_type": "t2.micro",
     "region": "{{user `aws_region`}}",
     "type": "amazon-ebs",
@@ -76,8 +54,7 @@
       "filters": {
         "virtualization-type": "hvm",
         "architecture": "x86_64",
-        "name": "*amzn2-ami-hvm-*-x86_64-gp2",
-        "block-device-mapping.volume-type": "gp2",
+        "name": "al2023-ami-2023.*-x86_64",
         "root-device-type": "ebs"
       },
       "owners": ["amazon"],
@@ -105,14 +82,14 @@
     "pause_before": "30s"
   },{
     "type": "shell",
-    "only": ["ubuntu16-ami", "amazon-linux-2-ami"],
+    "only": ["al2023-ami"],
     "inline": [
       "/tmp/terraform-aws-consul/modules/install-dnsmasq/install-dnsmasq"
     ],
     "pause_before": "30s"
   },{
     "type": "shell",
-    "only": ["ubuntu18-ami", "ubuntu20-ami"],
+    "only": ["ubuntu22-ami", "ubuntu24-ami"],
     "inline": [
       "/tmp/terraform-aws-consul/modules/setup-systemd-resolved/setup-systemd-resolved"
     ],
