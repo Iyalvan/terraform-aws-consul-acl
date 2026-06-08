@@ -447,6 +447,39 @@ function generate_bootstrap_acl_token {
   exit 1
 }
 
+# write default consul ACL policies into the policy dir if the operator hasn't supplied their own, so an
+# acl-enabled cluster works out of the box. the existing policy loop then mints + persists a token per
+# file. ships a "nomad" policy for nomad's token-based consul integration; override by adding your own
+# $policy_dir/nomad.hcl, or disable all defaults with --skip-default-acl-policies.
+function write_default_consul_policies {
+  local -r policy_dir="$1"
+
+  sudo mkdir -p "$policy_dir"
+
+  if ls "$policy_dir"/nomad* >/dev/null 2>&1; then
+    log_info "Found a user-provided nomad consul policy; not writing the default"
+  else
+    log_info "Writing default nomad consul policy to $policy_dir/nomad.hcl"
+    # nomad servers superset (also covers clients). acl=write lets nomad mint service-identity tokens
+    # for consul service mesh. see https://developer.hashicorp.com/nomad/docs/secure/acl/consul
+    sudo tee "$policy_dir/nomad.hcl" >/dev/null <<'EOF'
+agent_prefix "" {
+  policy = "read"
+}
+node_prefix "" {
+  policy = "read"
+}
+service_prefix "" {
+  policy = "write"
+}
+key_prefix "" {
+  policy = "read"
+}
+acl = "write"
+EOF
+  fi
+}
+
 function generate_node_acl_policy {
   local -r node_name="$1"
 
