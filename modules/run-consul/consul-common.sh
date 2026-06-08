@@ -251,7 +251,8 @@ function get_consul_minor_version {
 function get_consul_build_version {
   local build_version
 
-  minor_version=$(get_consul_version | cut -d'.' -f3)
+  # was assigning minor_version (wrong var), so this always echoed an empty string
+  build_version=$(get_consul_version | cut -d'.' -f3)
   echo $build_version
 } 
 

@@ -289,7 +289,7 @@ function run {
         source ${SCRIPT_DIR}/consul-bootstrap-ssm.sh;;
 
         *)
-        if [ $storage_type_matched="false" ]; then
+        if [ "$storage_type_matched" == "false" ]; then
             log_error "ACL storage type '${acl_storage_type}' is not supported."
             exit 1
         fi;;
