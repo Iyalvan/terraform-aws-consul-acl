@@ -449,30 +449,52 @@ function generate_bootstrap_acl_token {
 
 # validate a bootstrap/management token against the LIVE consul cluster. echoes exactly one of:
 #   valid   - `consul acl token read -self` succeeded: the token works on THIS cluster
-#   invalid - the cluster rejected the token (403 "ACL not found" / permission denied): the token is
-#             stale, or this cluster's ACL system is not bootstrapped yet
+#   invalid - the cluster rejected the token on enough consecutive probes to be sure it is stale, or
+#             this cluster's ACL system is not bootstrapped yet
 #   unknown - no definitive answer within the retry budget (no cluster leader / agent unreachable)
-# a still-forming cluster returns "No cluster leader" (500), which is retried and NEVER treated as
-# invalid, so we never misjudge a healthy-but-slow cluster as stale and destructively re-bootstrap it.
+#
+# a 403 "ACL not found" can be TRANSIENT: a server that has not yet caught up on its raft/ACL state can
+# briefly reject a token the leader would accept. so we never conclude "invalid" on a single 403 — only
+# when the cluster rejects the token on this many CONSECUTIVE probes (~a minute at the default sleep),
+# far longer than intra-datacenter raft catch-up. a valid token flips to 200 well before then; a
+# genuinely stale token keeps being rejected. a "no leader" (500) resets the streak, so a still-forming
+# cluster is never misjudged as stale.
 function validate_acl_token {
   local -r token="$1"
   local -r max_retries="${2:-30}"
   local -r sleep_between_retries="${3:-10}"
+  local -r reject_streak_to_confirm=6
 
   local output
+  local streak=0
+  local saw_reject="false"
   for (( i=0; i<"$max_retries"; i++ )); do
     if output=$(consul acl token read -self -token="$token" 2>&1); then
       echo "valid"
       return
     fi
     if echo "$output" | grep -qiE 'ACL not found|Permission denied'; then
-      echo "invalid"
-      return
+      saw_reject="true"
+      streak=$((streak + 1))
+      if [[ "$streak" -ge "$reject_streak_to_confirm" ]]; then
+        echo "invalid"
+        return
+      fi
+    else
+      # a non-403 error (no cluster leader / agent unreachable) is not a definitive ACL answer
+      streak=0
     fi
-    log_info "Cluster not ready to validate the ACL token yet (attempt $((i+1))/$max_retries): $(echo "$output" | tail -n1)"
+    log_info "ACL token not confirmed against the cluster yet (attempt $((i+1))/$max_retries, reject streak $streak): $(echo "$output" | tail -n1)"
     sleep "$sleep_between_retries"
   done
-  echo "unknown"
+
+  # budget exhausted with no 200: if the cluster ever definitively rejected the token, treat it as
+  # stale; otherwise we never got a clear answer (kept hitting no-leader) and must not guess.
+  if [[ "$saw_reject" == "true" ]]; then
+    echo "invalid"
+  else
+    echo "unknown"
+  fi
 }
 
 # write default consul ACL policies into the policy dir if the operator hasn't supplied their own, so an

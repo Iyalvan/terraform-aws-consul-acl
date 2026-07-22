@@ -424,8 +424,6 @@ function run {
       fi
 
       if [[ "$should_bootstrap" == "true" ]]; then
-        log_info "Purging any stale bootstrap token from SSM before bootstrapping"
-        delete_acl_token "$cluster_tag_value" "bootstrap" "$aws_region"
         log_info "Generating bootstrap ACL token"
         bootstrap_token=$(generate_bootstrap_acl_token $MAX_RETRIES $SLEEP_BETWEEN_RETRIES_SEC)
         log_info "Persisting bootstrap token to SSM parameter"

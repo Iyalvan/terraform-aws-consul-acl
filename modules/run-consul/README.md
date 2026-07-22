@@ -324,17 +324,17 @@ Store](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-mana
 Because SSM parameters outlive the instances that created them, a redeploy that reuses a
 `--cluster-tag-value` can find a bootstrap token left behind by a previous cluster. `run-consul`
 validates any existing token against the live cluster before trusting it: a valid token is reused (an
-ordinary reboot or node replacement), a stale one is purged and the cluster is re-bootstrapped, and a
-transient "no leader" state is retried rather than mistaken for a stale token. This makes repeated
-deploys under the same cluster tag safe.
+ordinary reboot or node replacement), a token the cluster rejects on repeated probes is treated as
+stale and triggers a re-bootstrap, and a transient "no leader" state is retried rather than mistaken
+for a stale token. This makes repeated deploys under the same cluster tag safe.
 
 The bootstrap token is a global-management token, so treat the `/<cluster-tag-value>/token/bootstrap`
 parameter as highly sensitive. Scoping it down or rotating it after bootstrap is a control-plane concern
 and is intentionally left out of the boot flow.
 
-The instance role needs `ssm:PutParameter`, `ssm:GetParameters`, and `ssm:DeleteParameter` scoped to
-`/<cluster-tag-value>/*`; these are granted by the [consul-iam-policies module](../consul-iam-policies)
-when `acl_store_type = "ssm"`.
+The instance role needs `ssm:PutParameter` and `ssm:GetParameters` scoped to `/<cluster-tag-value>/*`;
+these are granted by the [consul-iam-policies module](../consul-iam-policies) when
+`acl_store_type = "ssm"`.
 
 
 

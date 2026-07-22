@@ -52,19 +52,3 @@ function write_acl_token {
   # aborting the bootstrap. these tokens are ours to (re)write authoritatively.
   aws ssm put-parameter --name $parameter_name --value $token --type SecureString --overwrite --region $aws_region
 }
-
-# best-effort delete of a token's SSM parameter. used to purge a stale bootstrap token before
-# re-bootstrapping, so nodes still waiting on the parameter block until the fresh token is written
-# rather than racing on the stale value. a missing parameter must not fail the run.
-function delete_acl_token {
-  local -r cluster_name="$1"
-  local -r token_name="${2:-bootstrap}"
-  local -r aws_region="$3"
-
-  local -r parameter_name=$(get_acl_token_parameter_name $cluster_name $token_name)
-  if aws ssm delete-parameter --name "$parameter_name" --region "$aws_region" 2>/dev/null; then
-    log_info "Deleted stale SSM parameter $parameter_name"
-  else
-    log_info "No SSM parameter $parameter_name to delete (or already gone); continuing"
-  fi
-}
