@@ -251,7 +251,8 @@ function get_consul_minor_version {
 function get_consul_build_version {
   local build_version
 
-  minor_version=$(get_consul_version | cut -d'.' -f3)
+  # was assigning minor_version (wrong var), so this always echoed an empty string
+  build_version=$(get_consul_version | cut -d'.' -f3)
   echo $build_version
 } 
 
@@ -444,6 +445,89 @@ function generate_bootstrap_acl_token {
   done
   log_error "Unable to obtain ACL token. Aborting."
   exit 1
+}
+
+# validate a bootstrap/management token against the LIVE consul cluster. echoes exactly one of:
+#   valid   - `consul acl token read -self` succeeded: the token works on THIS cluster
+#   invalid - the cluster rejected the token on enough consecutive probes to be sure it is stale, or
+#             this cluster's ACL system is not bootstrapped yet
+#   unknown - no definitive answer within the retry budget (no cluster leader / agent unreachable)
+#
+# a 403 "ACL not found" can be TRANSIENT: a server that has not yet caught up on its raft/ACL state can
+# briefly reject a token the leader would accept. so we never conclude "invalid" on a single 403 — only
+# when the cluster rejects the token on this many CONSECUTIVE probes (~a minute at the default sleep),
+# far longer than intra-datacenter raft catch-up. a valid token flips to 200 well before then; a
+# genuinely stale token keeps being rejected. a "no leader" (500) resets the streak, so a still-forming
+# cluster is never misjudged as stale.
+function validate_acl_token {
+  local -r token="$1"
+  local -r max_retries="${2:-30}"
+  local -r sleep_between_retries="${3:-10}"
+  local -r reject_streak_to_confirm=6
+
+  local output
+  local streak=0
+  local saw_reject="false"
+  for (( i=0; i<"$max_retries"; i++ )); do
+    if output=$(consul acl token read -self -token="$token" 2>&1); then
+      echo "valid"
+      return
+    fi
+    if echo "$output" | grep -qiE 'ACL not found|Permission denied'; then
+      saw_reject="true"
+      streak=$((streak + 1))
+      if [[ "$streak" -ge "$reject_streak_to_confirm" ]]; then
+        echo "invalid"
+        return
+      fi
+    else
+      # a non-403 error (no cluster leader / agent unreachable) is not a definitive ACL answer
+      streak=0
+    fi
+    log_info "ACL token not confirmed against the cluster yet (attempt $((i+1))/$max_retries, reject streak $streak): $(echo "$output" | tail -n1)"
+    sleep "$sleep_between_retries"
+  done
+
+  # budget exhausted with no 200: if the cluster ever definitively rejected the token, treat it as
+  # stale; otherwise we never got a clear answer (kept hitting no-leader) and must not guess.
+  if [[ "$saw_reject" == "true" ]]; then
+    echo "invalid"
+  else
+    echo "unknown"
+  fi
+}
+
+# write default consul ACL policies into the policy dir if the operator hasn't supplied their own, so an
+# acl-enabled cluster works out of the box. the existing policy loop then mints + persists a token per
+# file. ships a "nomad" policy for nomad's token-based consul integration; override by adding your own
+# $policy_dir/nomad.hcl, or disable all defaults with --skip-default-acl-policies.
+function write_default_consul_policies {
+  local -r policy_dir="$1"
+
+  sudo mkdir -p "$policy_dir"
+
+  if ls "$policy_dir"/nomad* >/dev/null 2>&1; then
+    log_info "Found a user-provided nomad consul policy; not writing the default"
+  else
+    log_info "Writing default nomad consul policy to $policy_dir/nomad.hcl"
+    # nomad servers superset (also covers clients). acl=write lets nomad mint service-identity tokens
+    # for consul service mesh. see https://developer.hashicorp.com/nomad/docs/secure/acl/consul
+    sudo tee "$policy_dir/nomad.hcl" >/dev/null <<'EOF'
+agent_prefix "" {
+  policy = "read"
+}
+node_prefix "" {
+  policy = "read"
+}
+service_prefix "" {
+  policy = "write"
+}
+key_prefix "" {
+  policy = "read"
+}
+acl = "write"
+EOF
+  fi
 }
 
 function generate_node_acl_policy {

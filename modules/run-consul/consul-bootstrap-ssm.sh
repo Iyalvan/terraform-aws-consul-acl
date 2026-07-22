@@ -47,5 +47,8 @@ function write_acl_token {
   local -r storage_type="$5"
 
   local -r parameter_name=$(get_acl_token_parameter_name $cluster_name $token_name)
-  aws ssm put-parameter --name $parameter_name --value $token --type SecureString --region $aws_region
-} 
+  # --overwrite makes this idempotent: on a redeploy the token params from a previous cluster with the
+  # same tag may still exist, and without --overwrite put-parameter fails with ParameterAlreadyExists,
+  # aborting the bootstrap. these tokens are ours to (re)write authoritatively.
+  aws ssm put-parameter --name $parameter_name --value $token --type SecureString --overwrite --region $aws_region
+}

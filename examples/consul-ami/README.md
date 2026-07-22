@@ -1,14 +1,13 @@
 # Consul AMI
 
 This folder shows an example of how to use the [install-consul](https://github.com/hashicorp/terraform-aws-consul/tree/master/modules/install-consul) and 
-either [install-dnsmasq](https://github.com/hashicorp/terraform-aws-consul/tree/master/modules/install-dnsmasq) for Ubuntu 16.04 and Amazon Linux 2 or [setup-systemd-resolved](https://github.com/hashicorp/terraform-aws-consul/tree/master/modules/setup-systemd-resolved) for Ubuntu 18.04 modules with [Packer](https://www.packer.io/) to create [Amazon Machine 
+either [install-dnsmasq](https://github.com/hashicorp/terraform-aws-consul/tree/master/modules/install-dnsmasq) for Amazon Linux 2023 or [setup-systemd-resolved](https://github.com/hashicorp/terraform-aws-consul/tree/master/modules/setup-systemd-resolved) for Ubuntu 22.04 and Ubuntu 24.04 modules with [Packer](https://www.packer.io/) to create [Amazon Machine 
 Images (AMIs)](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/AMIs.html) that have Consul and Dnsmasq installed on 
 top of:
  
-1. Ubuntu 16.04
-1. Ubuntu 18.04
-1. Ubuntu 20.04
-1. Amazon Linux 2
+1. Amazon Linux 2023
+1. Ubuntu 22.04
+1. Ubuntu 24.04
 
 These AMIs will have [Consul](https://www.consul.io/) installed and configured to automatically join a cluster during 
 boot-up. They also have [Dnsmasq](http://www.thekelleys.org.uk/dnsmasq/doc.html) installed and configured to use 
@@ -17,7 +16,7 @@ services](https://www.consul.io/intro/getting-started/services.html) for instruc
 in Consul). To see how to deploy this AMI, check out the [consul-cluster example](https://github.com/hashicorp/terraform-aws-consul/tree/master/examples/root-example). 
 
 For more info on Consul installation and configuration, check out the 
-[install-consul](https://github.com/hashicorp/terraform-aws-consul/tree/master/modules/install-consul) and [install-dnsmasq](https://github.com/hashicorp/terraform-aws-consul/tree/master/modules/install-dnsmasq) for Ubuntu 16.04 and Amazon Linux 2 or [setup-systemd-resolved](https://github.com/hashicorp/terraform-aws-consul/tree/master/modules/setup-systemd-resolved) for Ubuntu 18.04 and Ubuntu 20.04 documentation.
+[install-consul](https://github.com/hashicorp/terraform-aws-consul/tree/master/modules/install-consul) and [install-dnsmasq](https://github.com/hashicorp/terraform-aws-consul/tree/master/modules/install-dnsmasq) for Amazon Linux 2023 or [setup-systemd-resolved](https://github.com/hashicorp/terraform-aws-consul/tree/master/modules/setup-systemd-resolved) for Ubuntu 22.04 and Ubuntu 24.04 documentation.
 
 ## Dependencies
 1.  AWSCLI must be installed on the base AMI in order for run-consul to run
