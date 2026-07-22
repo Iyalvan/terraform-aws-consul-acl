@@ -277,3 +277,61 @@ There are Autopilot settings called [upgrade migrations](https://www.consul.io/d
 that are useful when adding new members to the cluster either with newer configurations or using
 newer versions of Consul. These configurations manage how Consul will promote new servers and demote
 old ones. These settings, however, are only available at the Consul Enterprise version. 
+
+
+
+
+## Consul's role in the HashiCorp stack
+
+Consul is the foundational layer of the stack and is provisioned before Nomad or Vault. It provides
+service discovery, health checking, and a key/value store, and can additionally run a
+[service mesh](https://developer.hashicorp.com/consul/docs/connect). Other components build on it:
+
+* Nomad servers and clients discover each other through Consul, so no static server list or `retry_join`
+  is required on the Nomad side.
+* Nomad workloads register their services in the Consul catalog and can read Consul KV from `template`
+  blocks.
+* Vault can use Consul as a storage backend.
+
+Consul also has standalone value independent of Nomad — service mesh with intentions, DNS, health
+checks, and KV — so this module is useful whether or not the rest of the stack is present.
+
+
+
+
+## ACL bootstrapping
+
+When you pass `--enable-acl --acl-storage-type ssm`, `run-consul` bootstraps the ACL system on first
+boot and stores the resulting tokens in [SSM Parameter
+Store](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html):
+
+1. **Rally point.** One server per Auto Scaling Group is deterministically elected as the "rally point",
+   so the cluster is bootstrapped exactly once no matter how many servers boot at the same time.
+
+1. **Bootstrap token → SSM.** The rally point runs `consul acl bootstrap` and writes the management
+   token to SSM (as a `SecureString`) at `/<cluster-tag-value>/token/bootstrap`. Every other server and
+   client reads the token from there.
+
+1. **Default policies.** Unless `--skip-default-acl-policies` is set, `run-consul` writes a default
+   `nomad` policy to `/opt/consul/policy`, mints a token for each policy file it finds there, and stores
+   each one in SSM (for example `/<cluster-tag-value>/token/nomad`). The default `nomad` policy is what
+   lets Nomad's token-based Consul integration work out of the box. Add your own `.hcl` files to the
+   policy directory to have tokens minted for them too.
+
+1. **Agent tokens.** Each agent mints its own agent token scoped to its node (via `-node-identity`) and
+   installs it with `consul acl set-agent-token`.
+
+Because SSM parameters outlive the instances that created them, a redeploy that reuses a
+`--cluster-tag-value` can find a bootstrap token left behind by a previous cluster. `run-consul`
+validates any existing token against the live cluster before trusting it: a valid token is reused (an
+ordinary reboot or node replacement), a stale one is purged and the cluster is re-bootstrapped, and a
+transient "no leader" state is retried rather than mistaken for a stale token. This makes repeated
+deploys under the same cluster tag safe.
+
+The bootstrap token is a global-management token, so treat the `/<cluster-tag-value>/token/bootstrap`
+parameter as highly sensitive. Scoping it down or rotating it after bootstrap is a control-plane concern
+and is intentionally left out of the boot flow.
+
+The instance role needs `ssm:PutParameter`, `ssm:GetParameters`, and `ssm:DeleteParameter` scoped to
+`/<cluster-tag-value>/*`; these are granted by the [consul-iam-policies module](../consul-iam-policies)
+when `acl_store_type = "ssm"`.
