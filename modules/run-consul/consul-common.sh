@@ -447,6 +447,34 @@ function generate_bootstrap_acl_token {
   exit 1
 }
 
+# validate a bootstrap/management token against the LIVE consul cluster. echoes exactly one of:
+#   valid   - `consul acl token read -self` succeeded: the token works on THIS cluster
+#   invalid - the cluster rejected the token (403 "ACL not found" / permission denied): the token is
+#             stale, or this cluster's ACL system is not bootstrapped yet
+#   unknown - no definitive answer within the retry budget (no cluster leader / agent unreachable)
+# a still-forming cluster returns "No cluster leader" (500), which is retried and NEVER treated as
+# invalid, so we never misjudge a healthy-but-slow cluster as stale and destructively re-bootstrap it.
+function validate_acl_token {
+  local -r token="$1"
+  local -r max_retries="${2:-30}"
+  local -r sleep_between_retries="${3:-10}"
+
+  local output
+  for (( i=0; i<"$max_retries"; i++ )); do
+    if output=$(consul acl token read -self -token="$token" 2>&1); then
+      echo "valid"
+      return
+    fi
+    if echo "$output" | grep -qiE 'ACL not found|Permission denied'; then
+      echo "invalid"
+      return
+    fi
+    log_info "Cluster not ready to validate the ACL token yet (attempt $((i+1))/$max_retries): $(echo "$output" | tail -n1)"
+    sleep "$sleep_between_retries"
+  done
+  echo "unknown"
+}
+
 # write default consul ACL policies into the policy dir if the operator hasn't supplied their own, so an
 # acl-enabled cluster works out of the box. the existing policy loop then mints + persists a token per
 # file. ships a "nomad" policy for nomad's token-based consul integration; override by adding your own

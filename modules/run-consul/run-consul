@@ -390,11 +390,42 @@ function run {
     local -r local_hostname=$(aws_wrapper_get_hostname)
     log_info "Local hostname is $local_hostname"
 
-    if [[ "$rally_point_hostname" == "$local_hostname" ]]; then
-      log_info "Checking if bootstrap token already exists"
+    if [[ "$rally_point_hostname" == "$local_hostname" && "$server" == "true" ]]; then
+      # the rally point decides whether THIS cluster needs its ACL system bootstrapped. an SSM
+      # bootstrap token may linger from a previous cluster that shared this --cluster-tag-value (SSM
+      # parameters outlive instances), so its mere presence is NOT proof the current cluster is
+      # bootstrapped. validate it against the live cluster before trusting it, and only bootstrap when
+      # the cluster genuinely has no valid ACL system. a transient no-leader error is never treated as
+      # "stale", so we never destructively re-bootstrap an already-bootstrapped cluster.
+      log_info "Rally point: determining the ACL bootstrap state of this cluster"
       local -r existing_token=$(read_acl_token $cluster_tag_value "bootstrap" $aws_region 1 0 "true")
 
-      if [[ "$existing_token" == "" ]] && [ "${server}" == "true" ]; then
+      local should_bootstrap="false"
+      if [[ -z "$existing_token" ]]; then
+        log_info "No bootstrap token in SSM; will bootstrap a fresh ACL system"
+        should_bootstrap="true"
+      else
+        log_info "Found a bootstrap token in SSM; validating it against the live cluster"
+        local -r token_verdict=$(validate_acl_token "$existing_token" $MAX_RETRIES $SLEEP_BETWEEN_RETRIES_SEC)
+        case "$token_verdict" in
+          valid)
+            log_info "SSM bootstrap token is valid for this cluster; trusting it (reboot/rejoin, no re-bootstrap)"
+            bootstrap_token="$existing_token"
+            ;;
+          invalid)
+            log_info "SSM bootstrap token is stale (rejected by this cluster); will re-bootstrap"
+            should_bootstrap="true"
+            ;;
+          *)
+            log_error "Could not determine ACL state within the retry budget (no cluster leader). Aborting rather than risk a destructive re-bootstrap."
+            exit 1
+            ;;
+        esac
+      fi
+
+      if [[ "$should_bootstrap" == "true" ]]; then
+        log_info "Purging any stale bootstrap token from SSM before bootstrapping"
+        delete_acl_token "$cluster_tag_value" "bootstrap" "$aws_region"
         log_info "Generating bootstrap ACL token"
         bootstrap_token=$(generate_bootstrap_acl_token $MAX_RETRIES $SLEEP_BETWEEN_RETRIES_SEC)
         log_info "Persisting bootstrap token to SSM parameter"
@@ -405,7 +436,7 @@ function run {
         if [[ "$skip_default_acl_policies" != "true" ]]; then
           write_default_consul_policies "$POLICY_DIR"
         fi
-        if [[ -d "$POLICY_DIR" ]] && [ "${server}" == "true" ]; then
+        if [[ -d "$POLICY_DIR" ]]; then
             if [ "$(ls -A $POLICY_DIR)" ]; then
               for policy in $POLICY_DIR/*; do
                 policy_name="$(basename $policy | cut -d "." -f1)"
@@ -413,58 +444,63 @@ function run {
                 write_acl_policy "$policy_name" "$policy_hcl" "$bootstrap_token"
                 log_info "Generating token for the policy - $policy_name"
                 local policy_token=$(generate_token "$policy_name" "$policy_name agent policy" $bootstrap_token)
-        
+
                 if [[ "$?" -eq 0 ]] && [ -n "${policy_token}" ]; then
                 write_acl_token $policy_token $cluster_tag_value $policy_name $aws_region "ssm"
                 else
                 log_error "Policy token cannot be generated. Please check the policies."
-                fi 
-              done           
+                fi
+              done
             else
             log_warn "Policy directory is empty"
             fi
-        else   
-        log_warn "Policy directory does not exists. So not generating any policies and tokens"
-		    fi        
-      else
-        log_info "Bootstrap token already exists, skipping"
-      fi      
-    fi
-
-    # If the bootstrap token isn't already read (i.e. if this is running on the non rally point node)
-    # then we need to read it.
-    if [[ -z "$bootstrap_token" ]]; then
-      log_info "Acquiring bootstrap token"
-      bootstrap_token=$(read_acl_token $cluster_tag_value "bootstrap" $aws_region)
+        else
+        log_warn "Policy directory does not exist. So not generating any policies and tokens"
+		    fi
+      fi
     fi
 
     local -r consul_major_version=$(get_consul_major_version)
     local -r consul_minor_version=$(get_consul_minor_version)
     local -r consul_build_version=$(get_consul_build_version)
 
+    # acquire a bootstrap token that works against THIS cluster, then mint this node's agent token from
+    # it. non-rally nodes read the token from SSM; on a redeploy the rally point may still be
+    # re-bootstrapping (Finding #4), so a freshly-read token can be briefly stale and the mint will be
+    # denied. re-read and retry rather than aborting, until a valid token is published. the rally point
+    # already holds a validated token here, so it succeeds on the first attempt with no extra reads.
+    local agent_token=""
+    local attempt
+    for (( attempt=1; attempt<=MAX_RETRIES; attempt++ )); do
+      if [[ -z "$bootstrap_token" ]]; then
+        log_info "Acquiring bootstrap token from SSM (attempt $attempt/$MAX_RETRIES)"
+        bootstrap_token=$(read_acl_token $cluster_tag_value "bootstrap" $aws_region)
+      fi
 
-    local agent_token
+      if ([ $consul_major_version -ge 1 ] && ( [ $consul_minor_version -ge 9 ] || ([ $consul_minor_version -eq 8 ] && [ $consul_build_version -ge 1 ]))) || [ $consul_major_version -gt 1 ]; then
+        log_info "Creating agent token using -node-identity"
+        agent_token=$(generate_agent_token "$node_name" $datacenter $bootstrap_token)
+      else
+        log_info "Creating agent policy and token"
+        local agent_policy=$(generate_node_acl_policy $local_hostname)
+        write_acl_policy "$node_name" "$agent_policy" "$bootstrap_token" || true
+        agent_token=$(generate_token "$node_name" "$node_name agent policy" $bootstrap_token)
+      fi
 
-    if ([ $consul_major_version -ge 1 ] && ( [ $consul_minor_version -ge 9 ] || ([ $consul_minor_version -eq 8 ] && [ $consul_build_version -ge 1 ]))) || [ $consul_major_version -gt 1 ]; then
-      # Generate the agent token using the newer method
-      log_info "Creating agent token using -node-idenity"
-      agent_token=$(generate_agent_token "$node_name" $datacenter $bootstrap_token)
-    else
-      # Generate agent policy dynamically and write it
-      log_info "Creating agent policy and token"
-      local -r agent_policy=$(generate_node_acl_policy $local_hostname)
-      write_acl_policy "$node_name" "$agent_policy" "$bootstrap_token"
+      if [[ -n "$agent_token" ]]; then
+        break
+      fi
 
-      # Generate agent token and persist it
-      agent_token=$(generate_token "$node_name" "$node_name agent policy" $bootstrap_token)
-    fi
+      log_warn "Could not mint an agent token yet; the SSM bootstrap token may be mid-rotation on a redeploy. Re-reading and retrying."
+      bootstrap_token=""
+      sleep "$SLEEP_BETWEEN_RETRIES_SEC"
+    done
 
-    if [ -z "$agent_token" ] || [ "$agent_token" == "" ]; then
-      log_error "Unable to acquire agent token. Aborting."
+    if [ -z "$agent_token" ]; then
+      log_error "Unable to acquire agent token after $MAX_RETRIES attempts. Aborting."
       exit 1
-    else
-      set_agent_token "$agent_token" "$bootstrap_token"
     fi
+    set_agent_token "$agent_token" "$bootstrap_token"
 
     
   fi
