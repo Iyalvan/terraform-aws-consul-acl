@@ -335,3 +335,35 @@ and is intentionally left out of the boot flow.
 The instance role needs `ssm:PutParameter`, `ssm:GetParameters`, and `ssm:DeleteParameter` scoped to
 `/<cluster-tag-value>/*`; these are granted by the [consul-iam-policies module](../consul-iam-policies)
 when `acl_store_type = "ssm"`.
+
+
+
+
+## Nomad workload identity (Consul as a JWT consumer)
+
+Consul can also issue tokens to Nomad workloads through [workload
+identity](https://developer.hashicorp.com/nomad/docs/concepts/workload-identity) (WI) instead of the
+shared agent token. This is **optional** — with the default `nomad` policy described above, Nomad's
+token-based Consul integration already works without any of it.
+
+WI is a Nomad-issued concept: Nomad signs a JWT per workload and serves a JWKS endpoint, and Consul is
+the *consumer*. To turn it on you configure a Consul [JWT auth
+method](https://developer.hashicorp.com/consul/docs/security/acl/auth-methods/jwt) that trusts Nomad's
+JWKS, plus binding rules that map workloads to Consul service identities and roles. That auth method is
+control-plane configuration — applied once with Terraform against a running Consul cluster — so it lives
+outside this boot script rather than being baked into it.
+
+The companion Terraform lives in the Nomad fork, since it pairs with `run-nomad --enable-consul-wi`:
+[`examples/nomad-consul-workload-identity`](https://github.com/Iyalvan/terraform-aws-nomad-acl/tree/master/examples/nomad-consul-workload-identity).
+Apply it against your Consul cluster with a management token (the bootstrap token in SSM works), then
+enable WI on the Nomad agents.
+
+A few things worth knowing:
+
+* **When you need it.** On Nomad 2.0.4+, workloads without WI fall back to the agent's Consul token, so
+  WI is genuinely optional. On Nomad 1.10.x–2.0.3 there is no fallback, so workloads that touch Consul
+  need WI. Once `--enable-consul-wi` is set on the Nomad agents the auth method must be in place — the
+  fallback no longer applies.
+* **Audience.** The auth method's bound audience must match what `run-nomad` emits (`consul.io`).
+* **Algorithm.** Nomad signs with `RS256`; do not add other algorithms to `JWTSupportedAlgs`.
+* **JWKS reachability.** Nomad's JWKS endpoint must be reachable from every Consul server.
