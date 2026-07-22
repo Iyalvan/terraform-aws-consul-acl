@@ -3,10 +3,9 @@
 This folder contains a script for configuring and running Consul on an [AWS](https://aws.amazon.com/) server. This 
 script has been tested on the following operating systems:
 
-* Ubuntu 16.04
-* Ubuntu 18.04
-* Ubuntu 20.04
-* Amazon Linux 2
+* Ubuntu 22.04
+* Ubuntu 24.04
+* Amazon Linux 2023
 
 There is a good chance it will work on other flavors of Debian, CentOS, and RHEL as well.
 
@@ -49,8 +48,8 @@ will automatically restart Consul if it crashes or the EC2 instance reboots.
 Note that `systemd` logs to its own journal by default.  To view the Consul logs, run `journalctl -u consul.service`.  To change
 the log output location, you can specify the `StandardOutput` and `StandardError` options by using the `--systemd-stdout` and `--systemd-stderr`
 options.  See the [`systemd.exec` man pages](https://www.freedesktop.org/software/systemd/man/systemd.exec.html#StandardOutput=) for available
-options, but note that the `file:path` option requires [systemd version >= 236](https://stackoverflow.com/a/48052152), which is not provided 
-in the base Ubuntu 16.04/18.04/20.04 and Amazon Linux 2 images.
+options, but note that the `file:path` option requires [systemd version >= 236](https://stackoverflow.com/a/48052152), which is available 
+in the base Ubuntu 22.04/24.04 and Amazon Linux 2023 images.
 
 See the [consul-cluster example](https://github.com/hashicorp/terraform-aws-consul/tree/master/examples/root-example) for fully-working sample code.
 
